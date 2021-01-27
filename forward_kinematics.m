@@ -1,6 +1,33 @@
 classdef forward_kinematics
+%%  Manipulator Forward Kinematics
+%
+%   Martin L Pryde MSc
+%   last updated 28/01/2021
+%   any questions, contact me at martinpryde@ymail.com
+%
+%   This class features many methods useful in the study and analysis in
+%   the forward kinematics of open-chain, rigid-body manipulators. It takes
+%   in the joint types (prismatic or revolute) and Denavit-Hartenberg
+%   parameters of a manipulator and from these can compute for the user:
+%       *   The homogenous transform from one link frame to the next with
+%       respect to the base frame
+%       *   The position of the end-effector in the base frame as a function
+%       of the manipulator joint angles
+%       *   The geometric jacobian of the manipulator
+%   In a future update, I hope to add a method for calculating the
+%   analytical jacobian in terms of euler angles.
+
     properties
+        %   "joint_type" property must be a char column vector with n
+        %   elements for n joints with each element being either 'p' or 'r'
+        %   for a prismatic or revolute joint respectively. For example, if
+        %   your manipulator has the joint configurtion RPRR then the
+        %   joint_type property must be initialised as ['r'; 'p'; 'r'; 'r'];
         joint_type
+        
+        %   The remaining properties are the familiar Denavit-Hartenberg
+        %   parameters. These must be entered as either double or sym
+        %   column vectors for each parameter.
         theta
         a
         alpha
@@ -9,6 +36,9 @@ classdef forward_kinematics
     
     methods
         function obj = forward_kinematics(joint_type, theta, a, alpha, d)
+            %%  Constructor
+            %   Enter the required properties as described above to create
+            %   an instance of this class
             obj.joint_type = joint_type;
             obj.theta = theta;
             obj.a = a;
@@ -17,6 +47,11 @@ classdef forward_kinematics
         end
         
         function t = dh_parameters(obj)
+            %%  Denavit-Hartenberg Parameter Table
+            %   This function creates a simple MATLAB table object for
+            %   displaying and verifying the parameters have been entered
+            %   correctly. The output is a MATLAB table object displaying
+            %   the entered parameters.
             varNames = {'joint number', 'joint type', 'theta', 'a', 'alpha', 'd'};
             n = length(obj.theta);
             joint_number = transpose(1:1:n);
@@ -24,10 +59,20 @@ classdef forward_kinematics
                 'VariableNames', varNames);
         end
         
-        function T_list = kinematic_transform_list(obj)
-            n = length(obj.theta);
-            A1 = obj.kinematic_transform(obj.theta(1,:), obj.a(1,:), obj.alpha(1,:), obj.d(1,:));
+        function T_list = homogeneous_transform_list(obj)
+            %%   List of Homogeneous Transforms
+            %   Computes each transform from one link to the previous for a
+            %   complete open-chain, rigid-body manipulator. The output is
+            %   a 4nx4 matrix where every fourth entry is the ith transform
+            %   for the ith link.
             
+            %   get number of links
+            n = length(obj.theta);
+            
+            %   compute first transform
+            A1 = obj.homogeneous_transform(obj.theta(1,:), obj.a(1,:), obj.alpha(1,:), obj.d(1,:));
+            
+            %   initialise matrix to be populated by transforms
             varType = class(obj.theta);
             switch varType
                 case 'double'
@@ -36,8 +81,11 @@ classdef forward_kinematics
                     T_list = sym(zeros(4*n,4));
             end
             
+            %   set first entry to the first transform in the sequence
             T_list(1:4,:) = A1;
             
+            %   compute remaining transforms using commutative property of
+            %   homogeneous transfroms
             i = 2;
             while i < n+1
                 j = 4*i;
@@ -45,20 +93,32 @@ classdef forward_kinematics
                 A = obj.a(i,1);
                 Alpha = obj.alpha(i,1);
                 D = obj.d(i,1);
-                A2 = obj.kinematic_transform(Theta, A, Alpha, D);
+                A2 = obj.homogeneous_transform(Theta, A, Alpha, D);
                 A1 = A1*A2;
                 T_list(j-3:j,:) = A1;
                 i = i + 1;
             end
-            T_list = simplify(T_list);
+            
+            %   simplify if entered parameters are of type 'sym'
+            switch varType
+                case 'double'
+                    % do nothing
+                case 'sym'
+                    T_list = simplify(T_list);
+            end
         end
         
         function J = geometric_jacobian(obj)
+            %%  Geometric Jacobian
+            %   This function computes the geometric jacobian of an
+            %   open-chain, rigid-body manipulator. The output is, for
+            %   redundant manipulators, a 6xn jacobian matrix.
+            
             %   get number of joints
             n = length(obj.theta);
             
-            %   get list of kinetic transformations
-            T_list = obj.kinematic_transform_list();
+            %   get list of homogeneous transformations
+            T_list = obj.homogeneous_transform_list();
             
             %   extract pose of each joint
             p_e = T_list((4*n-3):(4*n-1),4);
@@ -96,12 +156,22 @@ classdef forward_kinematics
                 end
             end
             
-            J = simplify(J);
+            switch varType
+                case 'double'
+                    %   do nothing
+                case 'sym'
+                    J = simplify(J);
+            end
         end
     end
     
     methods (Static)
-        function T = kinematic_transform(theta, a, alpha, d)
+        function T = homogeneous_transform(theta, a, alpha, d)
+            %%  Homogeneous Transform
+            %   This function computes the homogeneous transform from the
+            %   current frame to the previous frame using the scalar DH
+            %   parameters entered as inputs. The output of this function
+            %   is a 4x4 coordinate transformation matrix.
             Ct = cos(theta);
             St = sin(theta);
             Ca = cos(alpha);
