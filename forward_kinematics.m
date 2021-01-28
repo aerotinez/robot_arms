@@ -14,8 +14,9 @@ classdef forward_kinematics
 %       *   The position of the end-effector in the base frame as a function
 %       of the manipulator joint angles
 %       *   The geometric jacobian of the manipulator
-%   In a future update, I hope to add a method for calculating the
-%   analytical jacobian in terms of euler angles.
+%       *   The analytical jacobian of the manipulator with end-effector
+%       orientation expressed either in proper or roll-pitch-yaw euler
+%       angles
 
     properties
         %   "joint_type" property must be a char column vector with n
@@ -161,6 +162,51 @@ classdef forward_kinematics
                     %   do nothing
                 case 'sym'
                     J = simplify(J);
+            end
+        end
+        
+        function Ja = analytical_jacobian(obj, phi, theta, angleType)
+            %%  Analytical Jacobian
+            %   This function computes the analytical jacobian of an
+            %   open-chain, rigid-body manipulator. The output is, for
+            %   redundant manipulators, a 6xn jacobian matrix. Select from
+            %   either proper euler-angles or roll-pitch-yaw angles as
+            %   orientation representations by setting <angleType> to 'ZYZ'
+            %   or 'RPY' respectively.
+            
+            %   assign cosine shorthands
+            Cp = cos(phi);
+            Sp = sin(phi);
+            Ct = cos(theta);
+            St = sin(theta);
+            
+            %   build orientation representation transform
+            switch angleType
+                case 'ZYZ'
+                    T = [0, -Sp, Cp*St;
+                        0, Cp, Sp*St;
+                        1, 0, Ct];
+                case 'RPY'
+                    T = [1, 0, -St;
+                        0, Cp, Ct*Sp;
+                        0, -Sp, Cp*Ct];
+                otherwise
+                    error('Invalid angle type entered: must be either "ZYZ" or "RPY"');
+            end
+            
+            %   build jacobian orientation transform
+            Ta = [eye(3,3), zeros(3,3); zeros(3,3), T];
+            
+            %   obtain analytical jacobian from transform and geometric
+            %   jacobian
+            Ja = Ta*obj.geometric_jacobian();
+            
+            varType = class(obj.theta);
+            switch varType
+                case 'double'
+                    %   do nothing
+                case 'sym'
+                    Ja = simplify(Ja);
             end
         end
     end
