@@ -15,8 +15,7 @@ classdef forward_kinematics
 %       of the manipulator joint angles
 %       *   The geometric jacobian of the manipulator
 %       *   The analytical jacobian of the manipulator with end-effector
-%       orientation expressed either in proper or roll-pitch-yaw euler
-%       angles
+%       orientation expressed in roll-pitch-yaw euler angles
 %       *   Either the geometric or analytical jacobian in the minimum
 %       representation of the manipulator pose
 
@@ -111,12 +110,11 @@ classdef forward_kinematics
             end
         end
         
-        function x = end_effector_pose(obj, angleType)
+        function x = end_effector_pose(obj)
             %%  End-Effector Pose
             %   The output of this function is the pose of the end-effector
-            %   in the base frame. Select from either proper euler-angles 
-            %   or roll-pitch-yaw angles as orientation representations by 
-            %   setting <angleType> to 'ZYZ' or 'RPY' respectively.
+            %   in the base frame given in roll, pitch , yaw (RPY) euler
+            %   angles.
             
             %   get number of links
             n = length(obj.theta);
@@ -132,6 +130,7 @@ classdef forward_kinematics
             
             %   assign key elements to variables
             r11 = R(1,1);
+            r12 = R(1,2);
             r13 = R(1,3);
             r21 = R(2,1);
             r23 = R(2,3);
@@ -140,20 +139,20 @@ classdef forward_kinematics
             r33 = R(3,3);
             
             %   compute euler angles
-            switch angleType
-                case 'ZYZ'
-                    phi = atan2(r23, 213);
-                    Theta = atan2(sqrt(r13*r13 + r23*r23), r33);
-                    psi = atan2(r32, -r31);
-                case 'RPY'
-                    phi = atan2(r21, r11);
-                    Theta = atan2(-r31, sqrt(r32*r32 + r33*r33));
-                    psi = atan2(r32, r33);
-                otherwise
-                    error('Invalid angle type entered: must be either "ZYZ" or "RPY"');
+            pitch = -asin(r31);
+            
+            if (r31 <= 1 + 1e4*eps) && (r31 >=  1 - 1e4*eps) %   gimbal lock: pitch = -90
+                yaw = 0;
+                roll = atan2(-r12,-r13);
+            elseif (r31 >= -1 + 1e4*eps) && (r31 <=  -1 - 1e4*eps) %   gimbal lock: pitch = 90
+                yaw = 0;
+                roll = atan2(r12,r13);
+            else
+                yaw = atan2(r21,r11);
+                roll = atan2(r32,r33);
             end
             
-            x = [p; phi; Theta; psi];
+            x = [p; roll; pitch; yaw];
         end
         
         function J = geometric_jacobian(obj)
@@ -212,7 +211,7 @@ classdef forward_kinematics
             end
         end
         
-        function Ja = analytical_jacobian(obj, phi, theta, angleType)
+        function Ja = analytical_jacobian(obj, phi, theta)
             %%  Analytical Jacobian
             %   This function computes the analytical jacobian of an
             %   open-chain, rigid-body manipulator. The output is, for
@@ -228,19 +227,10 @@ classdef forward_kinematics
             St = sin(theta);
             
             %   build orientation representation transform
-            switch angleType
-                case 'ZYZ'
-                    T = [0, -Sp, Cp*St;
-                        0, Cp, Sp*St;
-                        1, 0, Ct];
-                case 'RPY'
-                    T = [1, 0, -St;
-                        0, Cp, Ct*Sp;
-                        0, -Sp, Cp*Ct];
-                otherwise
-                    error('Invalid angle type entered: must be either "ZYZ" or "RPY"');
-            end
-            
+            T = [1, 0, -St;
+                0, Cp, Ct*Sp;
+                0, -Sp, Cp*Ct];
+                
             %   build jacobian orientation transform
             Ta = [eye(3,3), zeros(3,3); zeros(3,3), T];
             
@@ -254,24 +244,6 @@ classdef forward_kinematics
                     %   do nothing
                 case 'sym'
                     Ja = simplify(Ja);
-            end
-        end
-        
-        function J = jacobian_minimum_representation(obj, jacType, phi, theta, angleType)
-            %%  Jacobian in minimum representation form
-            %   This function outputs either the geometric or analytical
-            %   jacobian in the minimum pose representation form i.e. all
-            %   null rows removed.
-            
-            switch jacType
-                case 'geometric'
-                    J = obj.geometric_jacobian();
-                    J = J(~all(J == 0, 2),:);
-                case 'analytical'
-                    J = obj.analytical_jacobian(phi, theta, angleType);
-                    J = J(~all(J == 0, 2),:);
-                otherwise
-                    error('invalid input: property "jacType" must be set equal to either "geometric" or "analytical"');
             end
         end
     end
